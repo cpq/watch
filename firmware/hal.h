@@ -1,9 +1,9 @@
-// Copyright (c) 2023 Cesanta Software Limited
+// Copyright (c) 2025 Sergey Lyubka
 // https://www.st.com/resource/en/reference_manual/dm00151940-stm32l41xxx42xxx43xxx44xxx45xxx46xxx-advanced-armbased-32bit-mcus-stmicroelectronics.pdf
 // SPDX-License-Identifier: MIT
 
-#ifndef LED_PIN
-#define LED_PIN PIN('B', 3)  // Green onboard LED on Nucleo-L432KC
+#ifndef UART_DEBUG
+#define UART_DEBUG USART1
 #endif
 
 #pragma once
@@ -23,7 +23,7 @@
 // System clock
 enum { AHB_DIV = 1, APB1_DIV = 1, APB2_DIV = 1 };
 enum { PLL_HSI = 16, PLL_M = 1, PLL_N = 10, PLL_R = 2 };  // 80 Mhz
-//#define SYS_FREQUENCY ((PLL_HSI * PLL_N / PLL_M / PLL_R) * 1000000)
+// #define SYS_FREQUENCY ((PLL_HSI * PLL_N / PLL_M / PLL_R) * 1000000)
 #define SYS_FREQUENCY 16000000
 #define APB2_FREQUENCY (SYS_FREQUENCY / APB2_DIV)
 #define APB1_FREQUENCY (SYS_FREQUENCY / APB1_DIV)
@@ -62,7 +62,7 @@ static inline void gpio_init(uint16_t pin, uint8_t mode, uint8_t type,
   CLRSET(gpio->OSPEEDR, 3UL << (n * 2), ((uint32_t) speed) << (n * 2));
   CLRSET(gpio->PUPDR, 3UL << (n * 2), ((uint32_t) pull) << (n * 2));
   CLRSET(gpio->AFR[n >> 3], 15UL << ((n & 7) * 4),
-          ((uint32_t) af) << ((n & 7) * 4));
+         ((uint32_t) af) << ((n & 7) * 4));
   CLRSET(gpio->MODER, 3UL << (n * 2), ((uint32_t) mode) << (n * 2));
 }
 static inline void gpio_input(uint16_t pin) {
@@ -73,10 +73,6 @@ static inline void gpio_output(uint16_t pin) {
   gpio_init(pin, GPIO_MODE_OUTPUT, GPIO_OTYPE_PUSH_PULL, GPIO_SPEED_HIGH,
             GPIO_PULL_NONE, 0);
 }
-
-#ifndef UART_DEBUG
-#define UART_DEBUG USART2
-#endif
 
 static inline bool uart_init(USART_TypeDef *uart, unsigned long baud) {
   // https://www.st.com/resource/en/datasheet/stm32l432kc.pdf
@@ -146,37 +142,30 @@ static inline long stack_usage(void) {
   return (sp - p) * sizeof(*p);
 }
 
+static inline void attach_external_irq(uint16_t pin) {
+  uint8_t bank = (uint8_t) (PINBANK(pin)), n = (uint8_t) (PINNO(pin));
+  int irq = EXTI0_IRQn + (n % 4);
+  SYSCFG->EXTICR[n / 4] &= ~(15UL << ((n % 4) * 4));
+  SYSCFG->EXTICR[n / 4] |= (uint32_t) (bank << ((n % 4) * 4));
+  EXTI->IMR1 |= BIT(n);
+  EXTI->RTSR1 |= BIT(n);
+  EXTI->FTSR1 |= BIT(n);
+  NVIC_SetPriority(irq, 3);
+  NVIC_EnableIRQ(irq);
+}
+
 static inline void clock_init(void) {
   SCB->CPACR |= 15 << 20;  // Enable FPU
   FLASH->ACR |= FLASH_ACR_LATENCY_4WS | FLASH_ACR_ICEN | FLASH_ACR_DCEN;
-#if 0
-#if 0
-  CLRSET(RCC->PLLCFGR, RCC_PLLCFGR_PLLM, (PLL_M - 1) << RCC_PLLCFGR_PLLM_Pos);
-  CLRSET(RCC->PLLCFGR, RCC_PLLCFGR_PLLN, PLL_N << RCC_PLLCFGR_PLLN_Pos);
-  CLRSET(RCC->PLLCFGR, RCC_PLLCFGR_PLLSRC, RCC_PLLCFGR_PLLSRC_HSI);
-  RCC->PLLCFGR |= RCC_PLLCFGR_PLLREN;
-#else
-  RCC->PLLCFGR = BIT(24) | BIT(20) | (PLL_N << 8) | RCC_PLLCFGR_PLLSRC_HSI |
-    (7 << 27) | BIT(16);
-  RCC->CR |= RCC_CR_PLLON;
-#endif
-  while (!(RCC->CR & RCC_CR_PLLRDY)) spin(1);
-#if 0
-  CLRSET(RCC->CFGR, RCC_CFGR_PPRE1, (3 + APB1_DIV / 2) << RCC_CFGR_PPRE1_Pos);
-  CLRSET(RCC->CFGR, RCC_CFGR_PPRE2, (3 + APB2_DIV / 2) << RCC_CFGR_PPRE1_Pos);
-#endif
-  RCC->CFGR |= RCC_CFGR_SW_PLL;
-  while ((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_PLL) spin(1);
-#else
+
   RCC->CR |= RCC_CR_HSION;
   while (!(RCC->CR & RCC_CR_HSIRDY)) spin(1);
   RCC->CFGR &= ~(RCC_CFGR_SW);
   RCC->CFGR |= (RCC_CFGR_SW_HSI);
   while ((RCC->CFGR & RCC_CFGR_SWS) != RCC_CFGR_SWS_HSI) spin(1);
-#endif
 
-  rng_init();                              // Initialise random number generator
-  RCC->APB2ENR |= RCC_APB2ENR_SYSCFGEN;    // Enable SYSCFG
+  // rng_init();
+  // RCC->APB2ENR |= RCC_APB2ENR_SYSCFGEN;    // Enable SYSCFG
   SystemCoreClock = SYS_FREQUENCY;         // Required by CMSIS
   SysTick_Config(SystemCoreClock / 1000);  // Sys tick every 1ms
 }
