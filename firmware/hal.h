@@ -2,10 +2,6 @@
 // https://www.st.com/resource/en/reference_manual/dm00151940-stm32l41xxx42xxx43xxx44xxx45xxx46xxx-advanced-armbased-32bit-mcus-stmicroelectronics.pdf
 // SPDX-License-Identifier: MIT
 
-#ifndef UART_DEBUG
-#define UART_DEBUG USART1
-#endif
-
 #pragma once
 #include <stm32l432xx.h>
 
@@ -130,16 +126,28 @@ static inline bool timer_expired(volatile uint64_t *t, uint64_t prd,
   return true;                                   // Expired, return true
 }
 // Fill in stack with markers, in order to calculate stack usage later
-extern unsigned char _estack, _end;
+extern unsigned char _end[];  // End of data section, start of heap. See link.ld
+extern unsigned char _estack[];           // End of stack - link.ld
+extern unsigned char *_current_heap_end;  // syscalls.c
+
 static inline void stack_fill(void) {
-  uint32_t dummy, *p = (uint32_t *) &_end;
+  uint32_t dummy, *p = (uint32_t *) _end;
   while (p < &dummy) *p++ = 0xa5a5a5a5;
 }
 
-static inline long stack_usage(void) {
-  uint32_t *sp = (uint32_t *) &_estack, *end = (uint32_t *) &_end, *p = sp - 1;
+static inline long stack_used(void) {
+  uint32_t *sp = (uint32_t *) _estack, *end = (uint32_t *) _end, *p = sp - 1;
   while (p > end && *p != 0xa5a5a5a5) p--;
   return (sp - p) * sizeof(*p);
+}
+
+static inline long ram_used(void) {
+  return (long) (_current_heap_end - _end);
+}
+
+static inline long ram_free(void) {
+  unsigned char endofstack;
+  return (long) (&endofstack - _current_heap_end);
 }
 
 static inline void attach_external_irq(uint16_t pin) {

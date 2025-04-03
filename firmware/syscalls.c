@@ -1,9 +1,4 @@
-// Copyright (c) 2022 Cesanta Software Limited
-// All rights reserved
-
 #include <sys/stat.h>
-
-#include "hal.h"
 
 int _fstat(int fd, struct stat *st) {
   if (fd < 0) return -1;
@@ -11,12 +6,15 @@ int _fstat(int fd, struct stat *st) {
   return 0;
 }
 
+extern unsigned char _end[];
+unsigned char *_current_heap_end = _end;
+
 void *_sbrk(int incr) {
-  static unsigned char *heap = NULL;
-  unsigned char *prev_heap;
-  if (heap == NULL) heap = &_end;
-  prev_heap = heap;
-  heap += incr;
+  unsigned char *heap_end = (unsigned char *) ((size_t) &heap_end - 256);
+  unsigned char *prev_heap = _current_heap_end;
+  // Check how much space we  got from the heap end to the stack end
+  if (_current_heap_end + incr > heap_end) return (void *) -1;
+  _current_heap_end += incr;
   return prev_heap;
 }
 
@@ -53,9 +51,8 @@ int _getpid(void) {
   return -1;
 }
 
-int _write(int fd, char *ptr, int len) {
+__attribute__((weak)) int _write(int fd, char *ptr, int len) {
   (void) fd, (void) ptr, (void) len;
-  if (fd == 1) uart_write_buf(UART_DEBUG, ptr, (size_t) len);
   return -1;
 }
 
