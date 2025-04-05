@@ -156,8 +156,8 @@ static inline void attach_external_irq(uint16_t pin) {
   SYSCFG->EXTICR[n / 4] &= ~(15UL << ((n % 4) * 4));
   SYSCFG->EXTICR[n / 4] |= (uint32_t) (bank << ((n % 4) * 4));
   EXTI->IMR1 |= BIT(n);
-  EXTI->RTSR1 |= BIT(n);
-  EXTI->FTSR1 |= BIT(n);
+  //EXTI->RTSR1 |= BIT(n);  // Trigger on rising edge
+  EXTI->FTSR1 |= BIT(n);  // Trigger on falling edge
   NVIC_SetPriority(irq, 3);
   NVIC_EnableIRQ(irq);
 }

@@ -1,5 +1,5 @@
 CFLAGS ?= -W -Wall -Wextra -Werror -Wundef -Wshadow -Wdouble-promotion -Wformat-truncation -fno-common
-CFLAGS += -g3 -Os -ffunction-sections -fdata-sections -Wno-shadow
+CFLAGS += -g3 -O0 -ffunction-sections -fdata-sections -Wno-shadow
 CFLAGS += -I. -Iinclude -Icmsis_core/CMSIS/Core/Include -Icmsis_l4/Include
 CFLAGS += -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16
 LDFLAGS ?= -Tlink.ld -nostartfiles -nostdlib --specs nano.specs -lc -lgcc -Wl,--gc-sections -Wl,-Map=$@.map
