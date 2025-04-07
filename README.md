@@ -19,6 +19,8 @@ PCB production and assembly was carried out by JLCPCB. This is the board
 I've got (I don't know why they soldered male pin headers, but fine, they came
 out handy for programming and testing. To be desoldered later):
 
+<center><img src="hardware/pcb.jpeg" style="max-width: 80%" /></center>
+
 
 ## Firmware
 
