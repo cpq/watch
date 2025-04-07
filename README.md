@@ -1,4 +1,4 @@
-#Binary watch
+# Binary watch
 
 This is my hobby project - a binary watch. It is FOSS software and hardware.
 The watch is based on STM32 L432KC microcontroller. It sleeps until the
