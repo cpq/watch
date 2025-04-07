@@ -1,14 +1,13 @@
 // Copyright (c) 2025 Sergey Lyubka
-
 // SPDX-License-Identifier: MIT
 
 #include "hal.h"
 
-#define UART_DEBUG USART1          // Debug output UART channel
-#define BTN_PIN PIN('A', 2)        // Button pin
-#define LED_SHOW_DURATION_MS 2500  // How long LEDs stay on after button press
-#define NEXT_PRESS_MS 500          // Time within next button press is expected
-#define LOG_PERIOD_MS 1000         // For periodic debug messages
+#define UART_DEBUG USART1    // Debug output UART channel
+#define BTN_PIN PIN('A', 2)  // Button pin
+#define TIMEOUT_MS 2500      // How long LEDs stay on after button press
+#define NEXT_PRESS_MS 500    // Time within next button press is expected
+#define LOG_PERIOD_MS 1000   // For periodic debug messages
 
 #define SECONDS_IN_DAY (24 * 60 * 60)
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof(x[0]))
@@ -22,7 +21,7 @@ static enum watch_state {
 } s_state = STATE_SLEEP;
 
 // Timestamp is millis when the LEDs should be turned off and we sleep again
-static uint64_t s_leds_turn_off_time;
+static uint64_t s_timeout;
 
 // Time in a day in milliseconds at device boot
 static uint64_t s_time_in_millis_at_boot;
@@ -71,10 +70,10 @@ static void set_leds(uint16_t mask) {
 static inline uint16_t time_to_led_mask(unsigned hours, unsigned minutes) {
   uint8_t a[] = {hours / 10, hours % 10, minutes / 10, minutes % 10};
   uint16_t mask = 0;
-  for (int i = 0; i < 4; i++) {
-    for (int j = 0; j < 4; j++) {
+  for (int i = 0; i < 4; i++) {    // columns
+    for (int j = 0; j < 4; j++) {  // rows
       uint16_t x = (a[i] & (1 << j)) ? 1 : 0;
-      mask |= x << (i * 4 + j);
+      mask |= x << (j * 4 + i);
     }
   }
   return mask;
@@ -113,65 +112,59 @@ static void blink_all(int num_times) {
 }
 
 static void led_task(void) {
-  //static int saved_press_count;
+  static int saved_press_count;
 
-#if 0
-
-  uint32_t mh = 3600 * 1000;  // Milliseconds in 1 hour
-  uint32_t mm = 60 * 1000;    // Milliseconds in 1 minute
-
-
-  if (s_next_press_timeout > g_ticks && s_press_count > 0) {
-    if (s_state == STATE_SLEEP && s_press_count == 1) {
-      set_state(STATE_SHOW_TIME);
-    } else if (s_state == STATE_SLEEP && s_press_count == 3) {
-      blink_all(1);
-      set_state(STATE_SET_HOURS);
-      printf("Setting hours, tick %lu\n", (unsigned long) g_ticks);
-    } else if (s_state == STATE_SLEEP && s_press_count == 4) {
-      blink_all(2);
-      set_state(STATE_SET_MINUTES);
-      printf("Setting minutes, tick %lu\n", (unsigned long) g_ticks);
-    } else if (s_state == STATE_SET_HOURS) {
+  if (s_state == STATE_SLEEP) {
+    if (s_press_count > 0 && g_ticks > s_next_press_timeout) {
+      if (s_press_count == 1) {
+        uint64_t now = g_ticks + s_time_in_millis_at_boot;
+        set_state(STATE_SHOW_TIME);
+        s_timeout = g_ticks + TIMEOUT_MS;
+        set_leds(time_to_led_mask(hours(now), minutes(now)));
+      } else if (s_press_count == 4) {
+        blink_all(2);
+        set_state(STATE_SET_MINUTES);
+        s_timeout = g_ticks + TIMEOUT_MS;
+      } else if (s_press_count == 3) {
+        blink_all(1);
+        set_state(STATE_SET_HOURS);
+        s_timeout = g_ticks + TIMEOUT_MS;
+      }
+      s_press_count = 0;
+    }
+  } else if (s_state == STATE_SHOW_TIME) {
+  } else if (s_state == STATE_SET_MINUTES) {
+    // On click, increment and show the current minute and shift the timeout
+    if (saved_press_count != s_press_count) {
       s_time_in_millis_at_boot =
-          s_press_count * mh + (s_time_in_millis_at_boot % mh);
-      set_leds(0);
-      printf("Setting hours: %d. Offset: %ld, tick %lu\n", s_press_count,
-             (long) s_time_in_millis_at_boot, (unsigned long) g_ticks);
-      set_state(STATE_SLEEP);
-    } else if (s_state == STATE_SET_MINUTES) {
-      set_leds(0);
-      s_time_in_millis_at_boot =
-          (s_time_in_millis_at_boot / mh) * mh + s_press_count * mm;
+          (s_time_in_millis_at_boot / 3600000) * 3600000 +
+          s_press_count * 60000;
+      set_leds(time_to_led_mask(0, s_press_count));
+      s_timeout = g_ticks + TIMEOUT_MS;
+      saved_press_count = s_press_count;
       printf("Setting minutes: %d. Offset: %ld, tick: %lu\n", s_press_count,
              (long) s_time_in_millis_at_boot, (unsigned long) g_ticks);
-      set_state(STATE_SLEEP);
     }
-
-    printf(
-        "tick: %5lu, heap used: %ld, stack used: %ld, clicks: %d, state: %d\n",
-        (unsigned long) g_ticks, ram_used(), stack_used(), s_press_count,
-        s_state);
-    s_leds_turn_off_time = g_ticks + LED_SHOW_DURATION_MS;
-    s_press_count = 0;
-  }
-
-  if (s_state != STATE_SLEEP && s_leds_turn_off_time > g_ticks) {
-    uint64_t now = g_ticks + s_time_in_millis_at_boot;
-    if (s_state == STATE_SET_HOURS) {
+  } else if (s_state == STATE_SET_HOURS) {
+    // On click, increment and show the current hour and shift the timeout
+    if (saved_press_count != s_press_count) {
+      s_time_in_millis_at_boot =
+          s_press_count * 3600000 + (s_time_in_millis_at_boot % (3600000));
       set_leds(time_to_led_mask(s_press_count, 0));
-    } else if (s_state == STATE_SET_MINUTES) {
-      set_leds(time_to_led_mask(0, s_press_count));
-    } else if (s_state == STATE_SHOW_TIME) {
-      set_leds(time_to_led_mask(hours(now), minutes(now)));
+      s_timeout = g_ticks + TIMEOUT_MS;
+      saved_press_count = s_press_count;
+      printf("Setting hours: %d. Offset: %ld, tick %lu\n", s_press_count,
+             (long) s_time_in_millis_at_boot, (unsigned long) g_ticks);
     }
   }
 
-  if (s_state == STATE_SHOW_TIME && s_leds_turn_off_time < g_ticks) {
+  // On timeout in any state, go back to sleep
+  if (s_state != STATE_SLEEP && g_ticks > s_timeout) {
     set_leds(0);
     set_state(STATE_SLEEP);
+    s_press_count = 0;
+    saved_press_count = 0;
   }
-#endif
 }
 
 // retargeting printf() to UART
