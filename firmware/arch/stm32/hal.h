@@ -3,7 +3,6 @@
 // SPDX-License-Identifier: MIT
 
 #pragma once
-#include <stm32l432xx.h>
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -16,6 +15,10 @@
 #define PINNO(pin) (pin & 255)
 #define PINBANK(pin) (pin >> 8)
 
+#include <stm32l432xx.h>
+
+extern volatile uint64_t g_ticks;  // Milliseconds since boot
+
 // System clock
 enum { AHB_DIV = 1, APB1_DIV = 1, APB2_DIV = 1 };
 enum { PLL_HSI = 16, PLL_M = 1, PLL_N = 10, PLL_R = 2 };  // 80 Mhz
@@ -26,6 +29,11 @@ enum { PLL_HSI = 16, PLL_M = 1, PLL_N = 10, PLL_R = 2 };  // 80 Mhz
 
 static inline void spin(volatile uint32_t count) {
   while (count--) (void) 0;
+}
+
+static inline void delay_ms(uint64_t milliseconds) {
+  uint64_t expire = g_ticks + milliseconds;
+  while (g_ticks < expire) spin(1);
 }
 
 enum { GPIO_MODE_INPUT, GPIO_MODE_OUTPUT, GPIO_MODE_AF, GPIO_MODE_ANALOG };
@@ -125,6 +133,7 @@ static inline bool timer_expired(volatile uint64_t *t, uint64_t prd,
   *t = (now - *t) > prd ? now + prd : *t + prd;  // Next expiration time
   return true;                                   // Expired, return true
 }
+
 // Fill in stack with markers, in order to calculate stack usage later
 extern unsigned char _end[];  // End of data section, start of heap. See link.ld
 extern unsigned char _estack[];           // End of stack - link.ld
@@ -156,7 +165,7 @@ static inline void attach_external_irq(uint16_t pin) {
   SYSCFG->EXTICR[n / 4] &= ~(15UL << ((n % 4) * 4));
   SYSCFG->EXTICR[n / 4] |= (uint32_t) (bank << ((n % 4) * 4));
   EXTI->IMR1 |= BIT(n);
-  //EXTI->RTSR1 |= BIT(n);  // Trigger on rising edge
+  // EXTI->RTSR1 |= BIT(n);  // Trigger on rising edge
   EXTI->FTSR1 |= BIT(n);  // Trigger on falling edge
   NVIC_SetPriority(irq, 3);
   NVIC_EnableIRQ(irq);

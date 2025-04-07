@@ -1,14 +1,14 @@
 CFLAGS ?= -W -Wall -Wextra -Werror -Wundef -Wshadow -Wdouble-promotion -Wformat-truncation -fno-common
 CFLAGS += -g3 -O0 -ffunction-sections -fdata-sections -Wno-shadow
-CFLAGS += -I. -Iinclude -Icmsis_core/CMSIS/Core/Include -Icmsis_l4/Include
+CFLAGS += -Iarch/stm32 -Iinclude -Icmsis_core/CMSIS/Core/Include -Icmsis_l4/Include
 CFLAGS += -mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16
-LDFLAGS ?= -Tlink.ld -nostartfiles -nostdlib --specs nano.specs -lc -lgcc -Wl,--gc-sections -Wl,-Map=$@.map
-SOURCES = main.c syscalls.c
+LDFLAGS ?= -Tarch/stm32/link.ld -nostartfiles -nostdlib --specs nano.specs -lc -lgcc -Wl,--gc-sections -Wl,-Map=$@.map
+SOURCES = main.c watch.c arch/stm32/syscalls.c
 SOURCES += cmsis_l4/Source/Templates/gcc/startup_stm32l432xx.s # ST startup file. Compiler-dependent!
 
 build: firmware.bin
 
-firmware.elf: cmsis_core cmsis_l4 hal.h link.ld Makefile $(SOURCES) 
+firmware.elf: cmsis_core cmsis_l4  Makefile arch/stm32/hal.h $(SOURCES) 
 	arm-none-eabi-gcc $(SOURCES) $(CFLAGS) $(CFLAGS_EXTRA) $(LDFLAGS) -o $@
 
 firmware.bin: firmware.elf
@@ -25,6 +25,9 @@ cmsis_core:
 
 cmsis_l4:
 	git clone -q -c advice.detachedHead=false  --depth 1 -b v1.7.2 https://github.com/STMicroelectronics/cmsis_device_l4 $@
+
+test:
+	$(CC) -W -Wall -Wextra -Iarch/unix arch/unix/unit_test.c -o firmware.test && ./firmware.test
 
 clean:
 	rm -rf firmware.* cmsis_*
